@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:dart_socket/model/paciente.dart';
 import 'package:shelf_web_socket/shelf_web_socket.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:logger/logger.dart';
 import 'package:mysql_client/mysql_client.dart';
+
+enum Commands { addPatient, getPatientsByIdDoc, getPatientsByLastName, getPatientById, updatePatient, deletePatient }
 
 var logger = Logger(
   printer: PrettyPrinter(),
@@ -13,15 +16,15 @@ var loggerNoStack = Logger(
   printer: PrettyPrinter(methodCount: 0),
 );
 
-void main() async {
+late MySQLConnection conn;
 
+void main() async {
   Logger.level = Level.debug;
 
   final certificate = File('cauto_chain.pem').readAsBytesSync();
   final privateKey = File('cauto_key.pem').readAsBytesSync();
 
   loggerNoStack.i("Connecting to DataBase...");
-
 
 /* Para corresrlo en el VPS
   final conn = await MySQLConnection.createConnection(
@@ -35,7 +38,7 @@ void main() async {
 */
 
   // create connection
-  final conn = await MySQLConnection.createConnection(
+  conn = await MySQLConnection.createConnection(
     host: "127.0.0.1",
     port: 3306,
     userName: "root",
@@ -47,6 +50,7 @@ void main() async {
 
   loggerNoStack.i("Connected");
 
+/*
   // make query
   var result = await conn.execute("SELECT * FROM pacientes LIMIT 2");
 
@@ -64,6 +68,7 @@ void main() async {
     // print all rows as Map<String, String>
     logger.d(row.assoc());
   }
+*/
 
   late final SecurityContext context;
 
@@ -77,15 +82,16 @@ void main() async {
   }
 
   var handler = webSocketHandler((webSocket) {
-    webSocket.stream.listen((frame) {
-      print(frame.runtimeType);
+    webSocket.stream.listen((frame) async {
+      logger.d(frame.runtimeType);
       // I convert the message to a list of int
-      List<int> intList =
-          frame.toString().split(',').map((str) => int.parse(str)).toList();
+      List<int> intList = frame.toString().split(',').map((str) => int.parse(str)).toList();
+
+      String listaPacientes = "";
 
       // Extract action
       int action = intList[0];
-      print("Action: $action");
+      logger.d("Action: $action");
 
       // Extract message length
       int messageLength = intList[1];
@@ -94,8 +100,26 @@ void main() async {
       if (intList.sublist(2).length == messageLength) {
         // Process command
         var decoded = utf8.decode(intList.sublist(2));
-        print(decoded);
-        print(decoded.runtimeType);
+        logger.d(decoded);
+
+        if (action == Commands.getPatientsByLastName.index) {
+          logger.d("Looking for patients by Last Name");
+          listaPacientes = await getPatientsByLastName(decoded);
+          logger.d(listaPacientes);
+        }
+
+        final message = listaPacientes;
+        final encodedMessage = utf8.encode(message);
+        final length = encodedMessage.length;
+        final lengthL = length % 255;
+        final lengthH = (length / 255).truncate();
+        final header = [0x01, lengthH, lengthL];
+        final answerFrame = [...header, ...encodedMessage];
+        print(answerFrame);
+        print(answerFrame.runtimeType);
+        webSocket.sink.add(answerFrame);
+
+
         webSocket.sink.add("$frame");
       } else {
         print("Recibí: $frame llegó corrupto");
@@ -120,9 +144,29 @@ void main() async {
       securityContext: context,
     )
         .then((server) {
-      loggerNoStack.i('Serving at ws://${server.address.host}:${server.port}');
+      loggerNoStack.i('Serving at wss://${server.address.host}:${server.port}');
     });
   } catch (e) {
     loggerNoStack.f(e);
   }
+}
+
+Future<String> getPatientsByLastName(String s) async {
+  List<Map<String, dynamic>> retrievedPatients = [];
+
+  // make query
+  var result = await conn.execute("SELECT * FROM pacientes WHERE apellido LIKE :ape  LIMIT 10", {"ape": '%$s%'});
+
+  // print query result
+  for (final row in result.rows) {
+    logger.d(row.assoc());
+    logger.d(row.assoc().runtimeType);
+    // retrievedPatients.add(Paciente.fromJson(row.assoc()));
+    retrievedPatients.add(row.assoc());
+  }
+  // logger.d("Number of rows retrieved: ${result.numOfRows}");
+  // logger.d("Rows retrieved: $retrievedPatients");
+  logger.d(jsonEncode(retrievedPatients));
+
+  return jsonEncode(retrievedPatients);
 }
