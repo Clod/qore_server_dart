@@ -36,49 +36,26 @@ void main() async {
 
   loggerNoStack.i("Connecting to DataBase...");
 
-/* Para corresrlo en el VPS
-  final conn = await MySQLConnection.createConnection(
-    host: "127.0.0.1",
-    port: 3306,
-    secure: false,
-    userName: "claudio",
-    password: "claudio",
-    databaseName: "qore", // optional
-  );
-*/
+  bool connectedToDB = false;
 
-  // create connection
-  conn = await MySQLConnection.createConnection(
-    host: "127.0.0.1",
-    port: 3306,
-    userName: "root",
-    password: "root",
-    databaseName: "qore", // optional
-  );
+  try {
+    // create connection
+    conn = await MySQLConnection.createConnection(
+      host: "127.0.0.1",
+      port: 3306,
+      userName: "root", // claudio
+      password: "root", // claudio
+      databaseName: "qore", // optional
+    );
 
-  await conn.connect();
+    await conn.connect();
 
-  loggerNoStack.i("Connected");
+    loggerNoStack.i("Connected");
 
-/*
-  // make query
-  var result = await conn.execute("SELECT * FROM pacientes LIMIT 2");
-
-  // print some result data
-  logger.d(result.numOfColumns);
-  logger.d(result.numOfRows);
-  logger.d(result.lastInsertID);
-  logger.d(result.affectedRows);
-
-  // print query result
-  for (final row in result.rows) {
-    // print(row.colAt(0));
-    // print(row.colByName("title"));
-
-    // print all rows as Map<String, String>
-    logger.d(row.assoc());
+    connectedToDB = true;
+  } catch (e) {
+    logger.f(e);
   }
-*/
 
   late final SecurityContext context;
 
@@ -111,18 +88,23 @@ void main() async {
         var decoded = utf8.decode(intList.sublist(3));
         logger.d(decoded);
 
-        if (action == Commands.getPatientsByLastName.index) {
-          responseMessage = await getPatientsByLastName(decoded);
-          logger.d(responseMessage);
-        } else if (action == Commands.getPatientsByIdDoc.index) {
-          responseMessage = await getPatientsByIdDoc(decoded);
-          logger.d(responseMessage);
-        } else if (action == Commands.addPatient.index) {
-          String patient = utf8.decode(intList.sublist(3));
-          responseMessage = await addPatient(patient);
-        } else if (action == Commands.updatePatient.index) {
-          String patient = utf8.decode(intList.sublist(3));
-          responseMessage = await updatePatient(patient);
+        if (connectedToDB) {
+          if (action == Commands.getPatientsByLastName.index) {
+            responseMessage = await getPatientsByLastName(decoded);
+            logger.d(responseMessage);
+          } else if (action == Commands.getPatientsByIdDoc.index) {
+            responseMessage = await getPatientsByIdDoc(decoded);
+            logger.d(responseMessage);
+          } else if (action == Commands.addPatient.index) {
+            String patient = utf8.decode(intList.sublist(3));
+            responseMessage = await addPatient(patient);
+          } else if (action == Commands.updatePatient.index) {
+            String patient = utf8.decode(intList.sublist(3));
+            responseMessage = await updatePatient(patient);
+          }
+        } else {
+          // Report that I am not connected to DB
+          responseMessage = '{"Result" : "Fatal", "Message" : "No hay conexión contra la Base de Datos."}';
         }
 
         final encodedMessage = utf8.encode(responseMessage);
@@ -172,41 +154,50 @@ Future<String> getPatientsByLastName(String s) async {
   List<Map<String, dynamic>> retrievedPatients = [];
 
   // make query
-  var result = await conn.execute("SELECT * FROM pacientes WHERE apellido LIKE :ape  LIMIT 10", {"ape": '%$s%'});
+  try {
+    var result = await conn.execute("SELECT * FROM pacientes WHERE apellido LIKE :ape  LIMIT 10", {"ape": '%$s%'});
 
-  // print query result
-  for (final row in result.rows) {
-    logger.d(row.assoc());
-    logger.d(row.assoc().runtimeType);
-    // retrievedPatients.add(Paciente.fromJson(row.assoc()));
-    retrievedPatients.add(row.assoc());
+    // print query result
+    for (final row in result.rows) {
+      logger.d(row.assoc());
+      logger.d(row.assoc().runtimeType);
+      // retrievedPatients.add(Paciente.fromJson(row.assoc()));
+      retrievedPatients.add(row.assoc());
+    }
+    // logger.d("Number of rows retrieved: ${result.numOfRows}");
+    // logger.d("Rows retrieved: $retrievedPatients");
+    logger.d(jsonEncode(retrievedPatients));
+
+    return jsonEncode(retrievedPatients);
+  } catch (e) {
+    logger.e(e);
+    return '{"Result" : "Failure", "Message" : "Error en la comunicación contra la Base de datos" }';
   }
-  // logger.d("Number of rows retrieved: ${result.numOfRows}");
-  // logger.d("Rows retrieved: $retrievedPatients");
-  logger.d(jsonEncode(retrievedPatients));
-
-  return jsonEncode(retrievedPatients);
 }
 
 Future<String> getPatientsByIdDoc(String s) async {
   logger.i("Looking for patients by Id Document: $s");
   List<Map<String, dynamic>> retrievedPatients = [];
+  try {
+    // make query
+    var result = await conn.execute("SELECT * FROM pacientes WHERE documento LIKE :doc  LIMIT 10", {"doc": '%$s%'});
 
-  // make query
-  var result = await conn.execute("SELECT * FROM pacientes WHERE documento LIKE :doc  LIMIT 10", {"doc": '%$s%'});
+    // print query result
+    for (final row in result.rows) {
+      logger.d(row.assoc());
+      logger.d(row.assoc().runtimeType);
+      // retrievedPatients.add(Paciente.fromJson(row.assoc()));
+      retrievedPatients.add(row.assoc());
+    }
+    // logger.d("Number of rows retrieved: ${result.numOfRows}");
+    // logger.d("Rows retrieved: $retrievedPatients");
+    logger.d(jsonEncode(retrievedPatients));
 
-  // print query result
-  for (final row in result.rows) {
-    logger.d(row.assoc());
-    logger.d(row.assoc().runtimeType);
-    // retrievedPatients.add(Paciente.fromJson(row.assoc()));
-    retrievedPatients.add(row.assoc());
+    return jsonEncode(retrievedPatients);
+  } catch (e) {
+    logger.e(e);
+    return '{"Result" : "Failure", "Message" : "Error en la comunicación contra la Base de datos" }';
   }
-  // logger.d("Number of rows retrieved: ${result.numOfRows}");
-  // logger.d("Rows retrieved: $retrievedPatients");
-  logger.d(jsonEncode(retrievedPatients));
-
-  return jsonEncode(retrievedPatients);
 }
 
 Future<String> addPatient(String patientData) async {
@@ -235,46 +226,51 @@ Future<String> addPatient(String patientData) async {
   }
 
   Paciente patient = Paciente.fromJson(resultMap);
+  try {
+    // Check if there is already a patient with the same id document from the same country
+    var checkResult = await conn.execute("SELECT * FROM pacientes WHERE nacionalidad = :nac and documento = :doc ",
+        {"nac": patient.nacionalidad, "doc": patient.documento});
 
-  // Check if there is already a patient with the same id document from the same country
-  var checkResult = await conn.execute("SELECT * FROM pacientes WHERE nacionalidad = :nac and documento = :doc ",
-      {"nac": patient.nacionalidad, "doc": patient.documento});
+    IResultSet? creationResult;
 
-  IResultSet? creationResult;
+    if (checkResult.numOfRows >= 1) {
+      logger.i("Trying to create an already existent patient: $patient");
+      result = '{"Result" : "Failure", "Message" : "Ya existe un paciente de ese país con el mismo nro. de documento" }';
+    } else {
+      creationResult = await conn.execute(
+          "INSERT INTO pacientes (id, nombre, apellido, documento, nacionalidad, fechanacimiento, fecha_creacion_ficha, sexo, diagnostico_prenatal, paciente_fallecido, semanas_gestacion, diag1, diag2, diag3, diag4, fecha_primer_diagnostico, nro_hist_clinica_papel, nro_ficha_diag_prenatal, comentarios ) VALUES (:id, :nombre, :apellido, :documento, :nacionalidad, :fechanacimiento, :fecha_creacion_ficha, :sexo, :diagnostico_prenatal, :paciente_fallecido, :semanas_gestacion, :diag1, :diag2, :diag3, :diag4, :fecha_primer_diagnostico, :nro_hist_clinica_papel, :nro_ficha_diag_prenatal, :comentarios )",
+          {
+            "id": null,
+            "nombre": patient.nombre,
+            "apellido": patient.apellido,
+            "documento": patient.documento,
+            "nacionalidad": patient.nacionalidad,
+            "fechanacimiento": patient.fechaNacimiento,
+            "fecha_creacion_ficha": patient.fechaCreacionFicha,
+            "sexo": patient.sexo,
+            "diagnostico_prenatal": patient.diagnosticoPrenatal,
+            "paciente_fallecido": patient.pacienteFallecido,
+            "semanas_gestacion": patient.semanasGestacion,
+            "diag1": patient.diag1,
+            "diag2": patient.diag2,
+            "diag3": patient.diag3,
+            "diag4": patient.diag4,
+            "fecha_primer_diagnostico": patient.fechaPrimerDiagnostico,
+            "nro_hist_clinica_papel": patient.nroHistClinicaPapel,
+            "nro_ficha_diag_prenatal": patient.nroFichaDiagPrenatal,
+            "comentarios": patient.comentarios
+          });
 
-  if (checkResult.numOfRows >= 1) {
-    logger.i("Trying to create an already existent patient: $patient");
-    result = '{"Result" : "Failure", "Message" : "Ya existe un paciente de ese país con el mismo nro. de documento" }';
-  } else {
-    creationResult = await conn.execute(
-        "INSERT INTO pacientes (id, nombre, apellido, documento, nacionalidad, fechanacimiento, fecha_creacion_ficha, sexo, diagnostico_prenatal, paciente_fallecido, semanas_gestacion, diag1, diag2, diag3, diag4, fecha_primer_diagnostico, nro_hist_clinica_papel, nro_ficha_diag_prenatal, comentarios ) VALUES (:id, :nombre, :apellido, :documento, :nacionalidad, :fechanacimiento, :fecha_creacion_ficha, :sexo, :diagnostico_prenatal, :paciente_fallecido, :semanas_gestacion, :diag1, :diag2, :diag3, :diag4, :fecha_primer_diagnostico, :nro_hist_clinica_papel, :nro_ficha_diag_prenatal, :comentarios )",
-        {
-          "id": null,
-          "nombre": patient.nombre,
-          "apellido": patient.apellido,
-          "documento": patient.documento,
-          "nacionalidad": patient.nacionalidad,
-          "fechanacimiento": patient.fechaNacimiento,
-          "fecha_creacion_ficha": patient.fechaCreacionFicha,
-          "sexo": patient.sexo,
-          "diagnostico_prenatal": patient.diagnosticoPrenatal,
-          "paciente_fallecido": patient.pacienteFallecido,
-          "semanas_gestacion": patient.semanasGestacion,
-          "diag1": patient.diag1,
-          "diag2": patient.diag2,
-          "diag3": patient.diag3,
-          "diag4": patient.diag4,
-          "fecha_primer_diagnostico": patient.fechaPrimerDiagnostico,
-          "nro_hist_clinica_papel": patient.nroHistClinicaPapel,
-          "nro_ficha_diag_prenatal": patient.nroFichaDiagPrenatal,
-          "comentarios": patient.comentarios
-        });
-
-    result = '{"Result" : "Success", "Message" : "Se creó el paciente con índice nro. ${creationResult.lastInsertID.toInt()}"}';
+      result =
+          '{"Result" : "Success", "Message" : "Se creó el paciente ${patient.nombre} ${patient.apellido} con índice nro. ${creationResult.lastInsertID.toInt()}"}';
+    }
+    // affectedRows is a BigInt but I seriously doubt the number of
+    // patiens cas exceed 9223372036854775807
+    return result;
+  } catch (e) {
+    logger.e(e);
+    return '{"Result" : "Failure", "Message" : "Error en la conexión contra la BD" }';
   }
-  // affectedRows is a BigInt but I seriously doubt the number of
-  // patiens cas exceed 9223372036854775807
-  return result;
 }
 
 Future<String> updatePatient(String patientData) async {
@@ -305,42 +301,47 @@ Future<String> updatePatient(String patientData) async {
   Paciente patient = Paciente.fromJson(resultMap);
 
   // Check if there is already a patient with the same id document from the same country
-  var checkResult = await conn.execute("SELECT * FROM pacientes WHERE nacionalidad = :nac and documento = :doc ",
-      {"nac": patient.nacionalidad, "doc": patient.documento});
+  try {
+    var checkResult = await conn.execute("SELECT * FROM pacientes WHERE nacionalidad = :nac and documento = :doc ",
+        {"nac": patient.nacionalidad, "doc": patient.documento});
 
-  IResultSet? creationResult;
+    IResultSet? creationResult;
 
-  if (checkResult.numOfRows < 1) {
-    logger.i("Trying to update an unexistent patient: $patient");
-    result = '{"Result" : "Failure", "Message" : "No existe un paciente con esa nacionalidad y documento" }';
-  } else {
-    creationResult = await conn.execute(
-        "UPDATE pacientes SET nombre = :nombre, apellido = :apellido, documento = :documento, nacionalidad = :nacionalidad, fechanacimiento = :fechaNacimiento, fecha_creacion_ficha = :fecha_creacion_ficha, sexo = :sexo, diagnostico_prenatal = :diagnostico_prenatal, paciente_fallecido = :paciente_fallecido, semanas_gestacion = :semanas_gestacion, diag1 = :diag1, diag2 = :diag2, diag3 = :diag3, diag4 = :diag4, fecha_primer_diagnostico = :fecha_primer_diagnostico, nro_hist_clinica_papel = :nro_hist_clinica_papel, nro_ficha_diag_prenatal = :nro_ficha_diag_prenatal, comentarios = :comentarios WHERE id = :id",
-        {
-          "id": patient.id,
-          "nombre": patient.nombre,
-          "apellido": patient.apellido,
-          "documento": patient.documento,
-          "nacionalidad": patient.nacionalidad,
-          "fechaNacimiento": patient.fechaNacimiento,
-          "fecha_creacion_ficha": patient.fechaCreacionFicha,
-          "sexo": patient.sexo,
-          "diagnostico_prenatal": patient.diagnosticoPrenatal,
-          "paciente_fallecido": patient.pacienteFallecido,
-          "semanas_gestacion": patient.semanasGestacion,
-          "diag1": patient.diag1,
-          "diag2": patient.diag2,
-          "diag3": patient.diag3,
-          "diag4": patient.diag4,
-          "fecha_primer_diagnostico": patient.fechaPrimerDiagnostico,
-          "nro_hist_clinica_papel": patient.nroHistClinicaPapel,
-          "nro_ficha_diag_prenatal": patient.nroFichaDiagPrenatal,
-          "comentarios": patient.comentarios
-        });
+    if (checkResult.numOfRows < 1) {
+      logger.i("Trying to update an unexistent patient: $patient");
+      result = '{"Result" : "Failure", "Message" : "No existe un paciente con esa nacionalidad y documento" }';
+    } else {
+      creationResult = await conn.execute(
+          "UPDATE pacientes SET nombre = :nombre, apellido = :apellido, documento = :documento, nacionalidad = :nacionalidad, fechanacimiento = :fechaNacimiento, fecha_creacion_ficha = :fecha_creacion_ficha, sexo = :sexo, diagnostico_prenatal = :diagnostico_prenatal, paciente_fallecido = :paciente_fallecido, semanas_gestacion = :semanas_gestacion, diag1 = :diag1, diag2 = :diag2, diag3 = :diag3, diag4 = :diag4, fecha_primer_diagnostico = :fecha_primer_diagnostico, nro_hist_clinica_papel = :nro_hist_clinica_papel, nro_ficha_diag_prenatal = :nro_ficha_diag_prenatal, comentarios = :comentarios WHERE id = :id",
+          {
+            "id": patient.id,
+            "nombre": patient.nombre,
+            "apellido": patient.apellido,
+            "documento": patient.documento,
+            "nacionalidad": patient.nacionalidad,
+            "fechaNacimiento": patient.fechaNacimiento,
+            "fecha_creacion_ficha": patient.fechaCreacionFicha,
+            "sexo": patient.sexo,
+            "diagnostico_prenatal": patient.diagnosticoPrenatal,
+            "paciente_fallecido": patient.pacienteFallecido,
+            "semanas_gestacion": patient.semanasGestacion,
+            "diag1": patient.diag1,
+            "diag2": patient.diag2,
+            "diag3": patient.diag3,
+            "diag4": patient.diag4,
+            "fecha_primer_diagnostico": patient.fechaPrimerDiagnostico,
+            "nro_hist_clinica_papel": patient.nroHistClinicaPapel,
+            "nro_ficha_diag_prenatal": patient.nroFichaDiagPrenatal,
+            "comentarios": patient.comentarios
+          });
 
-    result = '{"Result" : "Success", "Message" : "Se acualizó el paciente con índice nro. ${patient.id}"}';
+      result = '{"Result" : "Success", "Message" : "Se acualizó el paciente con índice nro. ${patient.id}"}';
+    }
+    // affectedRows is a BigInt but I seriously doubt the number of
+    // patiens cas exceed 9223372036854775807
+    return result;
+  } catch (e) {
+    logger.e(e);
+    return '{"Result" : "Failure", "Message" : "Error en la comunicación contra la Base de datos" }';
   }
-  // affectedRows is a BigInt but I seriously doubt the number of
-  // patiens cas exceed 9223372036854775807
-  return result;
 }
