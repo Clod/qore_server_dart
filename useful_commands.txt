@@ -1,0 +1,29 @@
+
+
+SELECT @@autocommit;
+
+SET autocommit = 0;  // Sin esto en los dos clientes no anda el lock.
+
+Si lo pongo en 1 esa sesión lockea independientemente del estado de la otra
+
+
+
+Si lo tiro con “for update” me da timeout independientemente del estado del autocommit
+
+     Si hago dos “for update”simultáneos, el segundo se queda esperando hasta que da timeout ó el primero libera el registro con commit.
+
+	Si el primero es for update y el segundo no, el segundo se ejecuta sin problemas.
+
+select apellido, nombre, sexo from pacientes where apellido = 'Smith';
+
+
+Si leo lockeando por CLI, se me loquea para el servidor (comportamiento correcto)
+
+LINEA DE COMANDOS LOCKEA A SERVER Y SERVER LOCKEA A LINEA DE COMANDOS
+
+O sea que, aparentemente me quedan dos problemas:
+
+1.- El server no se lockea a sí mismo
+2.- Si un registro está lockeado cierra la conexión.
+
+

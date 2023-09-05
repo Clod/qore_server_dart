@@ -13,6 +13,7 @@ enum Commands {
   getPatientById,
   updatePatient,
   deletePatient,
+  lockPatient,
 }
 
 var logger = Logger(
@@ -28,6 +29,9 @@ var loggerNoStack = Logger(
 
 late MySQLConnection conn;
 
+////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////   main      ////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
 void main() async {
   Logger.level = Level.debug;
 
@@ -38,23 +42,11 @@ void main() async {
 
   bool connectedToDB = false;
 
-  try {
-    // create connection
-    conn = await MySQLConnection.createConnection(
-      host: "127.0.0.1",
-      port: 3306,
-      userName: "root", // claudio
-      password: "root", // claudio
-      databaseName: "qore", // optional
-    );
-
-    await conn.connect();
-
-    loggerNoStack.i("Connected");
-
-    connectedToDB = true;
-  } catch (e) {
-    logger.f(e);
+  // Try to connect to DB
+  if (connectedToDB = await connectToDB(connectedToDB)) {
+    logger.i("Connected to DB");
+  } else {
+    logger.e("Unable to connect to DB");
   }
 
   late final SecurityContext context;
@@ -101,10 +93,19 @@ void main() async {
           } else if (action == Commands.updatePatient.index) {
             String patient = utf8.decode(intList.sublist(3));
             responseMessage = await updatePatient(patient);
+          } else if (action == Commands.lockPatient.index) {
+            String patient = utf8.decode(intList.sublist(3));
+            responseMessage = await lockPatient(patient);
           }
         } else {
-          // Report that I am not connected to DB
-          responseMessage = '{"Result" : "Fatal", "Message" : "No hay conexión contra la Base de Datos."}';
+          if (connectedToDB = await connectToDB(connectedToDB)) {
+            logger.i("Connected to DB");
+            responseMessage = '{"Result" : "Warning", "Message" : "Conectad a la BD por favor reintentar"}';
+          } else {
+            logger.e("Unable to connect to DB");
+            // Report that I am not connected to DB
+            responseMessage = '{"Result" : "Fatal", "Message" : "No hay conexión contra la Base de Datos."}';
+          }
         }
 
         final encodedMessage = utf8.encode(responseMessage);
@@ -146,6 +147,98 @@ void main() async {
   } catch (e) {
     loggerNoStack.f(e);
   }
+}
+
+Future<String> lockPatient(String patientData) async {
+  logger.i("Received LOCK request for:  $patientData");
+  String result = "";
+  // Remove curly braces from the string
+  String keyValueString = patientData.replaceAll('{', '').replaceAll('}', '');
+
+// Split the string into an array of key-value pairs
+  List<String> keyValuePairs = keyValueString.split(',');
+
+// Create a new Map<String, dynamic> object
+  Map<String, dynamic> resultMap = {};
+
+// Populate the Map with key-value pairs
+  for (String keyValue in keyValuePairs) {
+    // Split each key-value pair by the colon
+    List<String> pair = keyValue.split(':');
+
+    // Trim whitespace from the key and value strings
+    String key = pair[0].trim();
+    String? value = (pair[1].trim() == 'null' ? null : pair[1].trim());
+
+    // Add the key-value pair to the Map
+    resultMap[key] = value;
+  }
+
+  Paciente patient = Paciente.fromJson(resultMap);
+
+  // Check if there is already a patient with the same id document from the same country
+  try {
+    logger.i("Comezando el lockeo para patient: $patient");
+    // await conn.execute("START TRANSACTION");
+    var checkResult = await conn.execute("SELECT * FROM pacientes WHERE nacionalidad = :nac and documento = :doc FOR UPDATE",
+        {"nac": patient.nacionalidad, "doc": patient.documento});
+
+    IResultSet? creationResult;
+
+    if (checkResult.numOfRows < 1) {
+      logger.i("Trying to update an unexistent patient: $patient");
+      result = '{"Result" : "Failure", "Message" : "No existe un paciente con esa nacionalidad y documento" }';
+    } else {
+      logger.i("El paciente: $patient debería estat loquito.");
+    }
+    // affectedRows is a BigInt but I seriously doubt the number of
+    // patiens cas exceed 9223372036854775807
+    return result;
+  } catch (e) {
+    logger.e(e);
+    return '{"Result" : "Failure", "Message" : "Error en la comunicación contra la Base de datos" }';
+  }
+}
+
+Future<bool> connectToDB(bool connectedToDB) async {
+  try {
+    // create connection
+    conn = await MySQLConnection.createConnection(
+      host: "127.0.0.1",
+      port: 3306,
+      userName: "root", // claudio
+      password: "root", // claudio
+      databaseName: "qore", // optional
+    );
+
+    await conn.connect();
+
+    // Deactivate autocommit in order to enable row locking
+    var result = await conn.execute("SELECT @@autocommit");
+
+    // print query result
+    for (final row in result.rows) {
+      logger.d(row.assoc());
+    }
+
+    await conn.execute("SET autocommit = 0");
+
+    result = await conn.execute("SELECT @@autocommit;");
+
+    // print query result
+    for (final row in result.rows) {
+      logger.d(row.assoc());
+    }
+
+    logger.i("Autocommit: ${result.first.toString()}");
+
+    loggerNoStack.i("Connected");
+
+    connectedToDB = true;
+  } catch (e) {
+    logger.f(e);
+  }
+  return connectedToDB;
 }
 
 Future<String> getPatientsByLastName(String s) async {

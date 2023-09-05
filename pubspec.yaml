@@ -18,7 +18,7 @@ dev_dependencies:
 dependencies: {
   ansicolor: ^2.0.1,
   json_annotation: ^4.8.1,
-  logger: ^2.0.1, mysql_client: ^0.0.27, shelf: ^1.4.1,
+  logger: ^2.0.1, mysql1: ^0.20.0, mysql_client: ^0.0.27, shelf: ^1.4.1,
   shelf_static: ^1.1.2,
   shelf_web_socket: ^1.0.4
 , web_socket_channel: ^2.4.0}
